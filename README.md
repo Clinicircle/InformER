@@ -3,7 +3,7 @@
 Aarin H. Dave[^1], Aarav H. Dave[^1]
 
 ## Summary
-[VAD VIP Day 2024] [#HouseOfCode 2024] InformER is an app by Clinicircle ... Development is centered around accessibility features, many inspired from patient feedback and recommendations.
+InformER is an app by Clinicircle ... Development is centered around accessibility features, many inspired from patient feedback and recommendations.
 
 ## Usage
 To test out the app, please use the name "John Smith" or "Jane Doe", institution code "InformERDemo", and a unique session identifier.
