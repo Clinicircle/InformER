@@ -1,3 +1,5 @@
+![InformER Logo](assets/images/informerreadme.png)
+# InformER
 Aarin H. Dave[^1], Aarav H. Dave[^1]
 
 ## Summary
@@ -12,6 +14,7 @@ To test out the app, please use the name "John Smith" or "Jane Doe", institution
 *Coming Soon*
 
 ## Recognitions
+*Coming Soon*
 
 ## Technical Specifications
 
