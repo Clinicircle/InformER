@@ -1,10 +1,13 @@
+// app.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
-import 'dart:async';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'accessibility_settings_provider.dart';
-import 'accessibility.dart';
+
+class BoardElement {
+  final String label;
+  final IconData icon;
+  bool active;
+  BoardElement({required this.label, required this.icon, this.active = false});
+}
 
 class AppScreen extends StatefulWidget {
   const AppScreen({super.key});
@@ -13,560 +16,441 @@ class AppScreen extends StatefulWidget {
   State<AppScreen> createState() => _AppScreenState();
 }
 
-class _AppScreenState extends State<AppScreen> with SingleTickerProviderStateMixin {
+class _AppScreenState extends State<AppScreen> {
+  // Basic patient info stored locally (no Provider)
+  String _patientName = 'JOHN DOE';
+  String _patientId = 'MRN: 123456';
+  bool _editingName = false;
+  final TextEditingController _nameController = TextEditingController();
 
-  late PageController _pageController;
-  int _currentIndex = 0;
-  Timer? _scrollTimer;
-  double _currentPageValue = 0.0;
-  Timer? _inactivityTimer;
-  AnimationController? _loadingAnimationController;
-  Animation<double>? _loadingAnimation;
+  // Local preset elements frequently useful in ER displays
+  final List<BoardElement> _presets = [
+    BoardElement(label: 'Legally blind', icon: Icons.visibility_off),
+    BoardElement(label: 'Allergic: Penicillin', icon: Icons.warning),
+    BoardElement(label: 'NPO', icon: Icons.no_food),
+    BoardElement(label: 'Isolation: Mask', icon: Icons.health_and_safety),
+    BoardElement(label: 'Fall risk', icon: Icons.warning_amber_rounded),
+    BoardElement(label: 'DNR', icon: Icons.favorite_border),
+    BoardElement(label: 'Needs translator', icon: Icons.language),
+    BoardElement(label: 'Cannot consent', icon: Icons.gavel),
+  ];
 
-  bool _isSaying = false;
-  late FlutterTts _flutterTts;
-  bool _isTtsInitializedAndConfigured = false;
-
-  List<String> _currentPhrases = [];
+  // Custom messages the user can add at runtime
+  final List<BoardElement> _customMessages = [];
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(
-      initialPage: 0,
-      viewportFraction: 0.33,
-    );
-    _pageController.addListener(() {
-      if (mounted) {
-        setState(() {
-          _currentPageValue = _pageController.page!;
-        });
-      }
-    });
-
-    _flutterTts = FlutterTts();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _loadPhrasesAndSetup();
-      }
-    });
-
-    _loadingAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 5),
-    );
-    _loadingAnimation = Tween<double>(begin: 0, end: 1).animate(_loadingAnimationController!)
-      ..addListener(() {
-        if (mounted) {
-          setState(() {});
-        }
-      })
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          _resetToCycling();
-        }
-      });
-  }
-
-  Future<void> _loadPhrasesAndSetup() async {
-    if (!mounted) return;
-    final settings = Provider.of<AccessibilitySettingsProvider>(context, listen: false);
-
-    _currentPhrases = List<String>.from(settings.customPhrases);
-
-    if (_currentPhrases.isEmpty) {
-      _currentPhrases = ["No phrases configured."];
-    }
-
-    _currentIndex = _currentPhrases.length * 1000;
-    _currentPageValue = _currentIndex.toDouble();
-
-    _pageController.dispose();
-    _pageController = PageController(
-      initialPage: _currentIndex,
-      viewportFraction: 0.33,
-    );
-    _pageController.addListener(() {
-      if (mounted) {
-        setState(() {
-          _currentPageValue = _pageController.page!;
-        });
-      }
-    });
-
-    await _setupTtsAndStartScroll();
-  }
-
-
-  Future<void> _setupTtsAndStartScroll() async {
-    if (!mounted) return;
-    final settings = Provider.of<AccessibilitySettingsProvider>(context, listen: false);
-
-    String langCode = settings.language;
-    if (settings.language.contains("(") && settings.language.endsWith(")")) {
-      final startIndex = settings.language.lastIndexOf("(");
-      langCode = settings.language.substring(startIndex + 1, settings.language.length - 1);
-    }
-    await _flutterTts.setLanguage(langCode);
-    await _flutterTts.setVolume(settings.appVolume / 100.0);
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.setPitch(1.0);
-
-    if (settings.voice != "Achernar" && settings.voice != "Default" && settings.rawAvailableVoices.isNotEmpty) {
-      final selectedVoiceData = settings.rawAvailableVoices.firstWhere(
-            (v) => "${v['name']} (${v['locale']})" == settings.voice,
-        orElse: () => settings.rawAvailableVoices.firstWhere(
-              (v) => v['name'] == settings.voice,
-          orElse: () => {},
-        ),
-      );
-      if (selectedVoiceData.isNotEmpty) {
-        await _flutterTts.setVoice(selectedVoiceData);
-      }
-    }
-
-    _flutterTts.setErrorHandler((msg) {
-      if (mounted) {
-        print("TTS Error on AppScreen: $msg");
-        _resetToCycling();
-      }
-    });
-
-    _isTtsInitializedAndConfigured = true;
-    if (_currentPhrases.isNotEmpty && _currentPhrases.first != "No phrases configured.") {
-      _startAutoScroll();
-    }
-  }
-
-  Future<void> _speak(String text) async {
-    if (!mounted || !_isTtsInitializedAndConfigured || text.isEmpty || text == "No phrases configured.") return;
-
-    final settings = Provider.of<AccessibilitySettingsProvider>(context, listen: false);
-    String langCode = settings.language;
-    if (settings.language.contains("(") && settings.language.endsWith(")")) {
-      final startIndex = settings.language.lastIndexOf("(");
-      langCode = settings.language.substring(startIndex + 1, settings.language.length - 1);
-    }
-    await _flutterTts.setLanguage(langCode);
-    await _flutterTts.setVolume(settings.appVolume / 100.0);
-    if (settings.voice != "Achernar" && settings.voice != "Default" && settings.rawAvailableVoices.isNotEmpty) {
-      final selectedVoiceData = settings.rawAvailableVoices.firstWhere(
-              (v) => "${v['name']} (${v['locale']})" == settings.voice,
-          orElse: () => settings.rawAvailableVoices.firstWhere(
-                (v) => v['name'] == settings.voice,
-            orElse: () => {},
-          )
-      );
-      if (selectedVoiceData.isNotEmpty) {
-        await _flutterTts.setVoice(selectedVoiceData);
-      }
-    }
-    await _flutterTts.speak(text);
-  }
-
-  void _startAutoScroll() {
-    if (!mounted || _isSaying || !_isTtsInitializedAndConfigured || _currentPhrases.isEmpty || _currentPhrases.first == "No phrases configured.") return;
-    final settings = Provider.of<AccessibilitySettingsProvider>(context, listen: false);
-    _scrollTimer?.cancel();
-    _scrollTimer = Timer.periodic(Duration(milliseconds: (2500 / settings.cycleSpeed).round()), (timer) {
-      if (_pageController.hasClients && mounted && !_isSaying) {
-        _currentIndex++;
-        _pageController.animateToPage(
-          _currentIndex,
-          duration: const Duration(milliseconds: 700),
-          curve: Curves.easeInOut,
-        );
-      } else if (_isSaying || !mounted) {
-        timer.cancel();
-      }
-    });
-  }
-
-  void _resetInactivityTimer() {
-    _inactivityTimer?.cancel();
-    _loadingAnimationController?.reset();
-    if (mounted && _isSaying) {
-      _loadingAnimationController?.forward();
-    }
-    _inactivityTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted && _isSaying) {
-        _resetToCycling();
-      }
-    });
-  }
-
-  void _resetToCycling() {
-    if (mounted) {
-      _flutterTts.stop();
-      _inactivityTimer?.cancel();
-      _loadingAnimationController?.reset();
-      if (_isSaying) {
-        setState(() {
-          _isSaying = false;
-        });
-      }
-      if (_currentPhrases.isNotEmpty && _currentPhrases.first != "No phrases configured.") {
-        _startAutoScroll();
-      }
-    }
-  }
-
-  void _handleScreenTap() {
-    if (!mounted || !_isTtsInitializedAndConfigured || _currentPhrases.isEmpty) return;
-
-    final String currentMessage = _currentPhrases[_currentIndex % _currentPhrases.length];
-    if (currentMessage == "No phrases configured.") return;
-
-    if (_isSaying) {
-      _flutterTts.stop();
-      _speak(currentMessage);
-      _resetInactivityTimer();
-    } else {
-      setState(() {
-        _isSaying = true;
-      });
-      _scrollTimer?.cancel();
-      _speak(currentMessage);
-      _resetInactivityTimer();
-    }
+    _nameController.text = _patientName;
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
-    _scrollTimer?.cancel();
-    _inactivityTimer?.cancel();
-    _loadingAnimationController?.dispose();
-    _flutterTts.stop();
+    _nameController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final settings = Provider.of<AccessibilitySettingsProvider>(context);
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+  void _toggleElement(BoardElement element) {
+    setState(() {
+      element.active = !element.active;
+    });
+  }
 
-    if (!listEquals(_currentPhrases, settings.customPhrases)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          print("Custom phrases changed, reloading...");
-          _isSaying = false;
-          _flutterTts.stop();
-          _scrollTimer?.cancel();
-          _inactivityTimer?.cancel();
-          _loadingAnimationController?.reset();
-          _isTtsInitializedAndConfigured = false;
-          _loadPhrasesAndSetup();
-        }
-      });
-    }
+  void _addCustomMessage(String text, {IconData? icon}) {
+    setState(() {
+      _customMessages.insert(
+          0, BoardElement(label: text.trim(), icon: icon ?? Icons.note, active: true));
+    });
+  }
 
-    if (_currentPhrases.isEmpty) {
-      _currentPhrases = ["No phrases available."];
-    }
+  void _removeCustomMessage(BoardElement element) {
+    setState(() {
+      _customMessages.remove(element);
+    });
+  }
 
-    final String currentMessage = _currentPhrases.isNotEmpty
-        ? _currentPhrases[_currentIndex % _currentPhrases.length]
-        : "Loading phrases...";
+  void _setPatientName(String name) {
+    setState(() {
+      _patientName = name.trim().isEmpty ? 'UNKNOWN' : name.toUpperCase();
+      _nameController.text = _patientName;
+      _editingName = false;
+    });
+  }
 
-    final bool canInteract = _currentPhrases.isNotEmpty && _currentPhrases.first != "No phrases configured." && _currentPhrases.first != "No phrases available.";
+  Future<void> _showAddCustomDialog() async {
+    final TextEditingController ctrl = TextEditingController();
+    IconData selectedIcon = Icons.note;
 
-    const goldColor = Color(0xFFF1C232);
-
-    return Semantics(
-      label: _isSaying ? "Speaking: $currentMessage. Tap to speak again." : "Tap to speak: $currentMessage. Current cycle speed: ${settings.cycleSpeed}x",
-      hint: _isSaying ? "Will return to cycling messages after a short period." : "Cycles through messages. Tap screen to select and say the displayed message.",
-      button: true,
-      excludeSemantics: false,
-      child: GestureDetector(
-        onTap: canInteract ? _handleScreenTap : null,
-        behavior: HitTestBehavior.opaque,
-        child: Scaffold(
-          body: Stack(
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF0B1220),
+          title: Text('Add custom message', style: GoogleFonts.dmSans(fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Positioned.fill(
-                child: Image.asset(
-                  settings.backgroundImage,
-                  fit: BoxFit.cover,
+              TextField(
+                controller: ctrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'e.g. Patient uses service animal',
+                  hintStyle: TextStyle(color: Colors.white60),
                 ),
               ),
-              SafeArea(
-                child: Column(
-                  children: [
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Semantics(
-                              label: "Settings",
-                              hint: "Opens accessibility settings screen",
-                              button: true,
-                              child: IconButton(
-                                icon: Icon(
-                                  Icons.settings,
-                                  color: settings.primaryTextColor,
-                                  size: 50,
-                                ),
-                                onPressed: () async {
-                                  _scrollTimer?.cancel();
-                                  await _flutterTts.stop();
-                                  if (mounted) {
-                                    setState(() {
-                                      _isSaying = false;
-                                    });
-                                    _loadingAnimationController?.reset();
-                                    _inactivityTimer?.cancel();
-                                  }
-
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (context) => const AccessibilityScreen()),
-                                  );
-                                  if(mounted) {
-                                    _isTtsInitializedAndConfigured = false;
-                                    _loadPhrasesAndSetup();
-                                  }
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Semantics(
-                              label: "Go Back",
-                              hint: "Returns to the previous screen",
-                              button: true,
-                              child: IconButton(
-                                icon: Icon(
-                                  Icons.home,
-                                  color: settings.primaryTextColor,
-                                  size: 50,
-                                ),
-                                onPressed: () {
-                                  _resetToCycling();
-                                  Navigator.of(context).pop();
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final topSectionHeight = constraints.maxHeight * 0.35;
-                            final middleSectionHeight = constraints.maxHeight * 0.30;
-                            final bottomSectionHeight = constraints.maxHeight * 0.35;
-                            final clickToSayFontSize = 24.0;
-
-                            return Semantics(
-                              liveRegion: true,
-                              label: _isSaying ? "Saying: $currentMessage" : "Displaying: $currentMessage",
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: <Widget>[
-                                  SizedBox(
-                                    height: topSectionHeight,
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        if (_isSaying)
-                                          Text(
-                                            "SAYING",
-                                            style: GoogleFonts.dmSans(
-                                              fontSize: clickToSayFontSize,
-                                              fontWeight: FontWeight.bold,
-                                              color: settings.borderColor,
-                                            ),
-                                          )
-                                        else if (canInteract)
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            crossAxisAlignment: CrossAxisAlignment.center,
-                                            children: [
-                                              Image.asset(
-                                                'assets/images/clickicon.png',
-                                                height: clickToSayFontSize,
-                                                semanticLabel: "",
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                "CLICK TO SAY",
-                                                style: GoogleFonts.dmSans(
-                                                  fontSize: clickToSayFontSize,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: settings.borderColor,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        const SizedBox(height: 12),
-                                        Padding(
-                                          padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05),
-                                          child: Text(
-                                            currentMessage,
-                                            textAlign: TextAlign.center,
-                                            style: GoogleFonts.dmSans(
-                                              fontSize: 70,
-                                              fontWeight: FontWeight.bold,
-                                              color: _isSaying ? settings.borderColor : goldColor,
-                                              height: 1.1,
-                                            ),
-                                          ),
-                                        ),
-                                        if (_isSaying) ...[
-                                          const SizedBox(height: 15),
-                                          SizedBox(
-                                            width: 40,
-                                            height: 40,
-                                            child: CircularProgressIndicator(
-                                              value: _loadingAnimation?.value ?? 0.0,
-                                              strokeWidth: 5,
-                                              valueColor: const AlwaysStoppedAnimation<Color>(goldColor),
-                                              backgroundColor: settings.borderColor.withOpacity(0.3),
-                                              semanticsLabel: "Saying progress",
-                                            ),
-                                          ),
-                                          const SizedBox(height: 15),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            crossAxisAlignment: CrossAxisAlignment.center,
-                                            children: [
-                                              Image.asset(
-                                                'assets/images/clickicon.png',
-                                                height: clickToSayFontSize * 0.8,
-                                                semanticLabel: "",
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                "CLICK TO SAY AGAIN",
-                                                style: GoogleFonts.dmSans(
-                                                  fontSize: clickToSayFontSize * 0.8,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: settings.borderColor,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ]
-                                      ],
-                                    ),
-                                  ),
-                                  if (!_isSaying && canInteract)
-                                    SizedBox(
-                                      height: middleSectionHeight,
-                                      child: Center(
-                                        child: SizedBox(
-                                          height: screenHeight * 0.18,
-                                          child: Semantics(
-                                            label: "Available messages to select. Currently displaying options.",
-                                            child: PageView.builder(
-                                              controller: _pageController,
-                                              physics: _isSaying ? const NeverScrollableScrollPhysics() : const AlwaysScrollableScrollPhysics(),
-                                              itemCount: _currentPhrases.isNotEmpty ? null : 0,
-                                              itemBuilder: (context, index) {
-                                                if (_currentPhrases.isEmpty) return const SizedBox.shrink();
-
-                                                final itemIndex = index % _currentPhrases.length;
-                                                final message = _currentPhrases[itemIndex];
-
-                                                double scale = 1.0;
-                                                double opacity = 1.0;
-                                                double difference = index - _currentPageValue;
-
-                                                if (difference.abs() >= 0 && difference.abs() < 1) {
-                                                  scale = 1.0 - difference.abs() * 0.2;
-                                                  opacity = 1.0 - difference.abs() * 0.4;
-                                                } else if (difference.abs() >= 1 && difference.abs() < 2) {
-                                                  scale = 0.8 - (difference.abs() -1) * 0.2;
-                                                  opacity = 0.6 - (difference.abs()-1) * 0.3;
-                                                } else {
-                                                  scale = 0.6;
-                                                  opacity = 0.3;
-                                                }
-                                                scale = scale.clamp(0.6, 1.0);
-                                                opacity = opacity.clamp(0.3, 1.0);
-
-                                                return ExcludeSemantics(
-                                                  excluding: (difference.abs() > 0.5),
-                                                  child: Transform.scale(
-                                                    scale: scale,
-                                                    child: Opacity(
-                                                      opacity: opacity,
-                                                      child: Center(
-                                                        child: Container(
-                                                          width: screenWidth * 0.38,
-                                                          height: screenHeight * 0.15,
-                                                          margin: const EdgeInsets.symmetric(horizontal: 4.0),
-                                                          decoration: BoxDecoration(
-                                                            color: settings.colorScheme == ColorSchemeOption.light
-                                                                ? Colors.white
-                                                                : settings.buttonBackgroundColor,
-                                                            borderRadius: BorderRadius.circular(25),
-                                                            border: Border.all(
-                                                              color: settings.borderColor,
-                                                              width: 4,
-                                                            ),
-                                                          ),
-                                                          child: Center(
-                                                            child: Padding(
-                                                              padding: const EdgeInsets.all(10.0),
-                                                              child: FittedBox(
-                                                                fit: BoxFit.scaleDown,
-                                                                child: Text(
-                                                                  message,
-                                                                  textAlign: TextAlign.center,
-                                                                  style: GoogleFonts.dmSans(
-                                                                    fontSize: 40,
-                                                                    fontWeight: FontWeight.bold,
-                                                                    color: settings.borderColor,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    SizedBox(height: middleSectionHeight),
-                                  SizedBox(height: bottomSectionHeight),
-                                ],
-                              ),
-                            );
-                          }
-                      ),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _iconOption(Icons.note, selectedIcon, () => setState(() => selectedIcon = Icons.note)),
+                  _iconOption(Icons.pets, selectedIcon, () => setState(() => selectedIcon = Icons.pets)),
+                  _iconOption(Icons.medical_services, selectedIcon,
+                          () => setState(() => selectedIcon = Icons.medical_services)),
+                  _iconOption(Icons.healing, selectedIcon, () => setState(() => selectedIcon = Icons.healing)),
+                  _iconOption(Icons.health_and_safety, selectedIcon,
+                          () => setState(() => selectedIcon = Icons.health_and_safety)),
+                  _iconOption(Icons.visibility_off, selectedIcon,
+                          () => setState(() => selectedIcon = Icons.visibility_off)),
+                ],
               ),
             ],
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                final text = ctrl.text.trim();
+                if (text.isNotEmpty) {
+                  _addCustomMessage(text, icon: selectedIcon);
+                }
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _iconOption(IconData icon, IconData selected, VoidCallback onTap) {
+    final active = icon == selected;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFF1C232) : Colors.white10,
+          borderRadius: BorderRadius.circular(8),
         ),
+        child: Icon(icon, color: active ? Colors.black : Colors.white),
       ),
     );
   }
-}
 
-bool listEquals<T>(List<T>? a, List<T>? b) {
-  if (a == null) return b == null;
-  if (b == null || a.length != b.length) return false;
-  for (int i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) {
-      return false;
-    }
+  List<BoardElement> get _activeElements =>
+      [..._presets.where((p) => p.active), ..._customMessages.where((c) => c.active)];
+
+  @override
+  Widget build(BuildContext context) {
+    // Local visual defaults (replace or merge later with your accessibility provider)
+    const goldColor = Color(0xFFF1C232);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          // simple background gradient; replace with an asset if you wish
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [Color(0xFF071027), Color(0xFF091528)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(18.0),
+              child: Column(
+                children: [
+                  // header row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(children: [
+                        IconButton(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          icon: const Icon(Icons.arrow_back_ios),
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Text('ER Board', style: GoogleFonts.dmSans(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
+                      ]),
+                      Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              final snapshot = {
+                                'patient': _patientName,
+                                'active': _activeElements.map((e) => e.label).toList(),
+                              };
+                              // Save/share snapshot hook
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Snapshot captured (demo).')));
+                              // ignore: avoid_print
+                              print(snapshot);
+                            },
+                            icon: const Icon(Icons.save),
+                            label: const Text('Snapshot'),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings not present in this demo.'))),
+                            icon: const Icon(Icons.settings),
+                            color: Colors.white,
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Left pane: controls
+                        Flexible(
+                          flex: 4,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Patient', style: GoogleFonts.dmSans(fontSize: 14, color: Colors.white70)),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white10,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white12),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: _editingName
+                                          ? TextField(
+                                        controller: _nameController,
+                                        autofocus: true,
+                                        style: const TextStyle(fontSize: 26, color: Colors.white),
+                                        decoration: const InputDecoration(border: InputBorder.none),
+                                        onSubmitted: (v) => _setPatientName(v),
+                                      )
+                                          : Text(_patientName, style: GoogleFonts.dmSans(fontSize: 28, fontWeight: FontWeight.w800)),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(_editingName ? Icons.check : Icons.edit, color: Colors.white),
+                                      onPressed: () {
+                                        if (_editingName) {
+                                          _setPatientName(_nameController.text);
+                                        } else {
+                                          setState(() {
+                                            _editingName = true;
+                                          });
+                                        }
+                                      },
+                                    )
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text('Preset Items', style: GoogleFonts.dmSans(fontSize: 14, color: Colors.white70)),
+                              const SizedBox(height: 8),
+                              Expanded(
+                                child: GridView.builder(
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    mainAxisSpacing: 10,
+                                    crossAxisSpacing: 10,
+                                    childAspectRatio: 3.2,
+                                  ),
+                                  itemCount: _presets.length,
+                                  itemBuilder: (_, idx) {
+                                    final el = _presets[idx];
+                                    return GestureDetector(
+                                      onTap: () => _toggleElement(el),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 220),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                        decoration: BoxDecoration(
+                                          color: el.active ? goldColor : Colors.white10,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: el.active ? Colors.black26 : Colors.white12),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(el.icon, color: el.active ? Colors.black : Colors.white, size: 22),
+                                            const SizedBox(width: 10),
+                                            Expanded(child: Text(el.label, style: GoogleFonts.dmSans(fontWeight: FontWeight.w700, color: el.active ? Colors.black : Colors.white))),
+                                            Switch(value: el.active, onChanged: (_) => _toggleElement(el)),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  ElevatedButton.icon(
+                                    onPressed: _showAddCustomDialog,
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Add custom'),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: () {
+                                      setState(() {
+                                        for (var e in _presets) e.active = false;
+                                        for (var c in _customMessages) c.active = false;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.clear_all),
+                                    label: const Text('Clear active'),
+                                  ),
+                                ],
+                              )
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(width: 18),
+
+                        // Right pane: preview
+                        Flexible(
+                          flex: 6,
+                          child: Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white12),
+                              boxShadow: const [BoxShadow(color: Colors.black45, offset: Offset(0, 8), blurRadius: 24)],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                  Text('Board Preview', style: GoogleFonts.dmSans(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white70)),
+                                  Text(_patientId, style: const TextStyle(color: Colors.white54)),
+                                ]),
+                                const SizedBox(height: 12),
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(24),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.35),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Expanded(
+                                          child: Center(
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(_patientName,
+                                                  textAlign: TextAlign.center,
+                                                  style: GoogleFonts.dmSans(fontSize: 110, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Wrap(
+                                          spacing: 10,
+                                          runSpacing: 10,
+                                          alignment: WrapAlignment.center,
+                                          children: _activeElements.isNotEmpty
+                                              ? _activeElements
+                                              .map((e) => Chip(
+                                            avatar: Icon(e.icon, size: 18, color: Colors.black),
+                                            label: Text(e.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                            backgroundColor: goldColor,
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                          ))
+                                              .toList()
+                                              : [
+                                            Chip(
+                                              label: Text('No active items', style: GoogleFonts.dmSans(color: Colors.white70)),
+                                              backgroundColor: Colors.white12,
+                                            )
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+
+                                SizedBox(
+                                  height: 110,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                        Text('Custom messages', style: GoogleFonts.dmSans(fontWeight: FontWeight.w700)),
+                                        Text('${_customMessages.length} total', style: const TextStyle(color: Colors.white54))
+                                      ]),
+                                      const SizedBox(height: 8),
+                                      Expanded(
+                                        child: _customMessages.isEmpty
+                                            ? Center(child: Text('No custom messages yet.', style: GoogleFonts.dmSans(color: Colors.white60)))
+                                            : ListView.separated(
+                                          scrollDirection: Axis.horizontal,
+                                          itemCount: _customMessages.length,
+                                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                          itemBuilder: (_, idx) {
+                                            final custom = _customMessages[idx];
+                                            return GestureDetector(
+                                              onTap: () => _toggleElement(custom),
+                                              child: Container(
+                                                width: 220,
+                                                padding: const EdgeInsets.all(10),
+                                                decoration: BoxDecoration(
+                                                  color: custom.active ? goldColor : Colors.white10,
+                                                  borderRadius: BorderRadius.circular(12),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(custom.icon, color: custom.active ? Colors.black : Colors.white),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(child: Text(custom.label, style: const TextStyle(fontWeight: FontWeight.w700))),
+                                                    IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _removeCustomMessage(custom)),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      )
+                                    ],
+                                  ),
+                                )
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                ],
+              ),
+            ),
+          )
+        ],
+      ),
+    );
   }
-  return true;
 }
