@@ -39,6 +39,17 @@ class AccessibilitySettingsProvider with ChangeNotifier {
     }
   }
 
+  String get logoImage {
+    switch (_colorScheme) {
+      case ColorSchemeOption.light:
+        return 'assets/images/informerlogolight.png';
+      case ColorSchemeOption.dark:
+        return 'assets/images/informerlogodark.png';
+      case ColorSchemeOption.highContrast:
+        return 'assets/images/informerlogodark.png';
+    }
+  }
+
   Color get primaryTextColor {
     switch (_colorScheme) {
       case ColorSchemeOption.light:

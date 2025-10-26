@@ -61,7 +61,7 @@ class MainAppScreen extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
                     Image.asset(
-                      'assets/images/informerlogo.png',
+                      settings.logoImage,
                       width: screenWidth * 0.55,
                       fit: BoxFit.contain,
                     ),
