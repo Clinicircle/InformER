@@ -168,6 +168,20 @@ class SettingsScreen extends StatelessWidget {
                     itemHeight: settingsItemHeight,
                     settings: settings,
                   ),
+                  const SizedBox(height: 5),
+                  _buildSettingsItem(
+                    context,
+                    title: 'Edit Defaults',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const EditScreen()),
+                      );
+                    },
+                    itemWidth: itemWidth,
+                    itemHeight: settingsItemHeight,
+                    settings: settings,
+                  ),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.only(bottom: 40.0),
