@@ -273,18 +273,17 @@ class AccessibilitySettingsProvider with ChangeNotifier {
     _appVolume = prefs.getDouble('appVolume') ?? 50.0;
     _customPhrases = prefs.getStringList('customPhrases') ??
         [
-          "What is the time?",
-          "I am feeling unwell.",
-          "I need assistance.",
-          "Can you adjust my bed?",
-          "I am feeling pain.",
-          "I am feeling thirsty.",
-          "I am feeling hungry.",
-          "I need to use the restroom.",
-          "I am feeling cold.",
-          "I am feeling hot.",
-          "Can you call my family?",
-          "Thank you.",
+          "Legally blind.",
+          "Hearing impairment.",
+          "Mask required before entering.",
+          "Mobility assistance required.",
+          "NPO — nothing by mouth.",
+          "On insulin / diabetic.",
+          "Has allergies; check chart.",
+          "Isolation precautions required.",
+          "Do not resuscitate (DNR).",
+          "Service animal present.",
+          "InformER is very helpful!",
         ];
   }
 }
