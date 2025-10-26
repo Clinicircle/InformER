@@ -48,7 +48,8 @@ flutter:
     - assets/images/clinicircleicon.png
     - assets/images/freddieicon.jpg
     - assets/images/freddiepicture.png
-    - assets/images/informerlogo.png
+    - assets/images/informerlogolight.png
+    - assets/images/informerlogodark.png
     - assets/images/informerreadme.png
     - assets/gemini/API_KEY
     - assets/gemini/gemini_prompt.txt

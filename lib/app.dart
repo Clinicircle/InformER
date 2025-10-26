@@ -1,6 +1,9 @@
 // app.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import 'accessibility_settings_provider.dart';
 
 class BoardElement {
   final String label;
@@ -17,25 +20,25 @@ class AppScreen extends StatefulWidget {
 }
 
 class _AppScreenState extends State<AppScreen> {
-  // Basic patient info stored locally (no Provider)
+  // Local patient state (no extra provider required)
   String _patientName = 'JOHN DOE';
   String _patientId = 'MRN: 123456';
   bool _editingName = false;
   final TextEditingController _nameController = TextEditingController();
 
-  // Local preset elements frequently useful in ER displays
+  // Built-in preset elements
   final List<BoardElement> _presets = [
     BoardElement(label: 'Legally blind', icon: Icons.visibility_off),
-    BoardElement(label: 'Allergic: Penicillin', icon: Icons.warning),
+    BoardElement(label: 'Allergic: Penicillin', icon: Icons.warning_amber_rounded),
     BoardElement(label: 'NPO', icon: Icons.no_food),
-    BoardElement(label: 'Isolation: Mask', icon: Icons.health_and_safety),
-    BoardElement(label: 'Fall risk', icon: Icons.warning_amber_rounded),
-    BoardElement(label: 'DNR', icon: Icons.favorite_border),
+    BoardElement(label: 'Mask required', icon: Icons.masks),
+    BoardElement(label: 'Fall risk', icon: Icons.warning),
+    BoardElement(label: 'DNR', icon: Icons.do_not_disturb_on),
     BoardElement(label: 'Needs translator', icon: Icons.language),
     BoardElement(label: 'Cannot consent', icon: Icons.gavel),
   ];
 
-  // Custom messages the user can add at runtime
+  // Custom messages created at runtime
   final List<BoardElement> _customMessages = [];
 
   @override
@@ -51,22 +54,15 @@ class _AppScreenState extends State<AppScreen> {
   }
 
   void _toggleElement(BoardElement element) {
-    setState(() {
-      element.active = !element.active;
-    });
+    setState(() => element.active = !element.active);
   }
 
   void _addCustomMessage(String text, {IconData? icon}) {
-    setState(() {
-      _customMessages.insert(
-          0, BoardElement(label: text.trim(), icon: icon ?? Icons.note, active: true));
-    });
+    setState(() => _customMessages.insert(0, BoardElement(label: text.trim(), icon: icon ?? Icons.note, active: true)));
   }
 
   void _removeCustomMessage(BoardElement element) {
-    setState(() {
-      _customMessages.remove(element);
-    });
+    setState(() => _customMessages.remove(element));
   }
 
   void _setPatientName(String name) {
@@ -77,7 +73,12 @@ class _AppScreenState extends State<AppScreen> {
     });
   }
 
-  Future<void> _showAddCustomDialog() async {
+  List<BoardElement> get _activeElements => [
+    ..._presets.where((p) => p.active),
+    ..._customMessages.where((c) => c.active),
+  ];
+
+  Future<void> _showAddCustomDialog(BuildContext context, Color accentColor, TextStyle hintStyle) async {
     final TextEditingController ctrl = TextEditingController();
     IconData selectedIcon = Icons.note;
 
@@ -85,63 +86,78 @@ class _AppScreenState extends State<AppScreen> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF0B1220),
-          title: Text('Add custom message', style: GoogleFonts.dmSans(fontWeight: FontWeight.w700)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: ctrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  hintText: 'e.g. Patient uses service animal',
-                  hintStyle: TextStyle(color: Colors.white60),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _iconOption(Icons.note, selectedIcon, () => setState(() => selectedIcon = Icons.note)),
-                  _iconOption(Icons.pets, selectedIcon, () => setState(() => selectedIcon = Icons.pets)),
-                  _iconOption(Icons.medical_services, selectedIcon,
-                          () => setState(() => selectedIcon = Icons.medical_services)),
-                  _iconOption(Icons.healing, selectedIcon, () => setState(() => selectedIcon = Icons.healing)),
-                  _iconOption(Icons.health_and_safety, selectedIcon,
-                          () => setState(() => selectedIcon = Icons.health_and_safety)),
-                  _iconOption(Icons.visibility_off, selectedIcon,
-                          () => setState(() => selectedIcon = Icons.visibility_off)),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                final text = ctrl.text.trim();
-                if (text.isNotEmpty) {
-                  _addCustomMessage(text, icon: selectedIcon);
-                }
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Add'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          contentPadding: const EdgeInsets.all(0),
+          content: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Add custom message', style: GoogleFonts.dmSans(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. Service animal present',
+                    hintStyle: hintStyle,
+                    border: const OutlineInputBorder(borderSide: BorderSide.none),
+                    filled: true,
+                    fillColor: Colors.white10,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _iconOption(Icons.note, selectedIcon, () => setState(() => selectedIcon = Icons.note), accentColor),
+                    _iconOption(Icons.pets, selectedIcon, () => setState(() => selectedIcon = Icons.pets), accentColor),
+                    _iconOption(Icons.medical_services, selectedIcon, () => setState(() => selectedIcon = Icons.medical_services), accentColor),
+                    _iconOption(Icons.healing, selectedIcon, () => setState(() => selectedIcon = Icons.healing), accentColor),
+                    _iconOption(Icons.masks, selectedIcon, () => setState(() => selectedIcon = Icons.masks), accentColor),
+                    _iconOption(Icons.visibility_off, selectedIcon, () => setState(() => selectedIcon = Icons.visibility_off), accentColor),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: accentColor),
+                      onPressed: () {
+                        final text = ctrl.text.trim();
+                        if (text.isNotEmpty) _addCustomMessage(text, icon: selectedIcon);
+                        Navigator.of(ctx).pop();
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ],
+                )
+              ],
+            ),
+          ),
         );
       },
     );
   }
 
-  Widget _iconOption(IconData icon, IconData selected, VoidCallback onTap) {
-    final active = icon == selected;
+  Widget _iconOption(IconData icon, IconData selected, VoidCallback onTap, Color accentColor) {
+    final bool active = icon == selected;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: active ? const Color(0xFFF1C232) : Colors.white10,
+          color: active ? accentColor : Colors.white10,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, color: active ? Colors.black : Colors.white),
@@ -149,92 +165,64 @@ class _AppScreenState extends State<AppScreen> {
     );
   }
 
-  List<BoardElement> get _activeElements =>
-      [..._presets.where((p) => p.active), ..._customMessages.where((c) => c.active)];
-
   @override
   Widget build(BuildContext context) {
-    // Local visual defaults (replace or merge later with your accessibility provider)
-    const goldColor = Color(0xFFF1C232);
+    final settings = Provider.of<AccessibilitySettingsProvider>(context);
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
+
+    // Accent color derived from provider (sliderActiveColor works well as a visible accent)
+    final Color accentColor = settings.sliderActiveColor;
+    final Color primaryText = settings.primaryTextColor;
+    final Color borderColor = settings.borderColor;
+    final Color cardBg = settings.buttonBackgroundColor;
+    final TextStyle hintStyle = TextStyle(color: settings.secondaryTextColor.withOpacity(0.7));
+
+    // If provider offers images, use them as background/logo
+    final Widget background = settings.backgroundImage.isNotEmpty
+        ? Positioned.fill(child: Image.asset(settings.backgroundImage, fit: BoxFit.cover))
+        : const SizedBox.shrink();
 
     return Scaffold(
       body: Stack(
         children: [
-          // simple background gradient; replace with an asset if you wish
-          Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: [Color(0xFF071027), Color(0xFF091528)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              ),
-            ),
-          ),
+          background,
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(18.0),
               child: Column(
                 children: [
-                  // header row
+                  // Compact header: home/back + logo (no label text)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(children: [
-                        IconButton(
-                          onPressed: () => Navigator.of(context).maybePop(),
-                          icon: const Icon(Icons.arrow_back_ios),
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 8),
-                        Text('ER Board', style: GoogleFonts.dmSans(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
-                      ]),
-                      Row(
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              final snapshot = {
-                                'patient': _patientName,
-                                'active': _activeElements.map((e) => e.label).toList(),
-                              };
-                              // Save/share snapshot hook
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Snapshot captured (demo).')));
-                              // ignore: avoid_print
-                              print(snapshot);
-                            },
-                            icon: const Icon(Icons.save),
-                            label: const Text('Snapshot'),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings not present in this demo.'))),
-                            icon: const Icon(Icons.settings),
-                            color: Colors.white,
-                          ),
-                        ],
-                      )
+                      IconButton(
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: Icon(Icons.arrow_back_ios, color: primaryText),
+                        tooltip: 'Back',
+                      ),
                     ],
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Left pane: controls
+                        // Controls pane
                         Flexible(
                           flex: 4,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Patient', style: GoogleFonts.dmSans(fontSize: 14, color: Colors.white70)),
-                              const SizedBox(height: 8),
+                              // Patient name card
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.white10,
+                                  color: cardBg,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.white12),
+                                  border: Border.all(color: borderColor, width: 3),
                                 ),
                                 child: Row(
                                   children: [
@@ -243,56 +231,70 @@ class _AppScreenState extends State<AppScreen> {
                                           ? TextField(
                                         controller: _nameController,
                                         autofocus: true,
-                                        style: const TextStyle(fontSize: 26, color: Colors.white),
+                                        style: GoogleFonts.dmSans(fontSize: 26, color: primaryText),
                                         decoration: const InputDecoration(border: InputBorder.none),
-                                        onSubmitted: (v) => _setPatientName(v),
+                                        onSubmitted: _setPatientName,
                                       )
-                                          : Text(_patientName, style: GoogleFonts.dmSans(fontSize: 28, fontWeight: FontWeight.w800)),
+                                          : Text(_patientName,
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.w800,
+                                            color: primaryText,
+                                            letterSpacing: 1.2,
+                                          )),
                                     ),
                                     IconButton(
-                                      icon: Icon(_editingName ? Icons.check : Icons.edit, color: Colors.white),
+                                      icon: Icon(_editingName ? Icons.check : Icons.edit, color: primaryText),
                                       onPressed: () {
                                         if (_editingName) {
                                           _setPatientName(_nameController.text);
                                         } else {
-                                          setState(() {
-                                            _editingName = true;
-                                          });
+                                          setState(() => _editingName = true);
                                         }
                                       },
+                                      tooltip: _editingName ? 'Save name' : 'Edit name',
                                     )
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              Text('Preset Items', style: GoogleFonts.dmSans(fontSize: 14, color: Colors.white70)),
+
+                              const SizedBox(height: 14),
+
+                              Text('Preset items',
+                                  style: GoogleFonts.dmSans(fontSize: 14, color: settings.secondaryTextColor)),
+
                               const SizedBox(height: 8),
+
                               Expanded(
-                                child: GridView.builder(
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    mainAxisSpacing: 10,
-                                    crossAxisSpacing: 10,
-                                    childAspectRatio: 3.2,
-                                  ),
+                                child: ListView.separated(
+                                  padding: EdgeInsets.zero,
                                   itemCount: _presets.length,
-                                  itemBuilder: (_, idx) {
+                                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                  itemBuilder: (ctx, idx) {
                                     final el = _presets[idx];
                                     return GestureDetector(
                                       onTap: () => _toggleElement(el),
                                       child: AnimatedContainer(
                                         duration: const Duration(milliseconds: 220),
-                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                         decoration: BoxDecoration(
-                                          color: el.active ? goldColor : Colors.white10,
+                                          color: el.active ? accentColor : Colors.white10,
                                           borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: el.active ? Colors.black26 : Colors.white12),
+                                          border: Border.all(color: borderColor, width: 3),
                                         ),
                                         child: Row(
                                           children: [
-                                            Icon(el.icon, color: el.active ? Colors.black : Colors.white, size: 22),
+                                            Icon(el.icon, color: el.active ? Colors.black : primaryText, size: 20),
                                             const SizedBox(width: 10),
-                                            Expanded(child: Text(el.label, style: GoogleFonts.dmSans(fontWeight: FontWeight.w700, color: el.active ? Colors.black : Colors.white))),
+                                            Expanded(
+                                              child: Text(
+                                                el.label,
+                                                style: GoogleFonts.dmSans(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: el.active ? Colors.black : primaryText,
+                                                ),
+                                              ),
+                                            ),
                                             Switch(value: el.active, onChanged: (_) => _toggleElement(el)),
                                           ],
                                         ),
@@ -301,15 +303,18 @@ class _AppScreenState extends State<AppScreen> {
                                   },
                                 ),
                               ),
-                              const SizedBox(height: 12),
+
+                              const SizedBox(height: 8),
+
                               Row(
                                 children: [
                                   ElevatedButton.icon(
-                                    onPressed: _showAddCustomDialog,
-                                    icon: const Icon(Icons.add),
-                                    label: const Text('Add custom'),
+                                    onPressed: () => _showAddCustomDialog(context, accentColor, hintStyle),
+                                    icon: Icon(Icons.add, color: settings.primaryTextColor),
+                                    label: Text('Add', style: GoogleFonts.dmSans(color: settings.primaryTextColor),),
+                                    style: ElevatedButton.styleFrom(backgroundColor: accentColor),
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 10),
                                   OutlinedButton.icon(
                                     onPressed: () {
                                       setState(() {
@@ -317,8 +322,11 @@ class _AppScreenState extends State<AppScreen> {
                                         for (var c in _customMessages) c.active = false;
                                       });
                                     },
-                                    icon: const Icon(Icons.clear_all),
-                                    label: const Text('Clear active'),
+                                    icon:  Icon(Icons.clear_all, color: settings.secondaryTextColor,),
+                                    label: Text('Clear active', style: GoogleFonts.dmSans(color: settings.secondaryTextColor)),
+                                    style: OutlinedButton.styleFrom(
+                                      side: BorderSide(color: borderColor, width: 2),
+                                    ),
                                   ),
                                 ],
                               )
@@ -328,7 +336,7 @@ class _AppScreenState extends State<AppScreen> {
 
                         const SizedBox(width: 18),
 
-                        // Right pane: preview
+                        // Board preview
                         Flexible(
                           flex: 6,
                           child: Container(
@@ -336,23 +344,18 @@ class _AppScreenState extends State<AppScreen> {
                             decoration: BoxDecoration(
                               color: Colors.white10,
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white12),
-                              boxShadow: const [BoxShadow(color: Colors.black45, offset: Offset(0, 8), blurRadius: 24)],
+                              border: Border.all(color: borderColor, width: 3),
                             ),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                                  Text('Board Preview', style: GoogleFonts.dmSans(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white70)),
-                                  Text(_patientId, style: const TextStyle(color: Colors.white54)),
-                                ]),
-                                const SizedBox(height: 12),
+                                // Large patient name area (center)
                                 Expanded(
                                   child: Container(
-                                    padding: const EdgeInsets.all(24),
+                                    padding: const EdgeInsets.all(20),
                                     decoration: BoxDecoration(
                                       color: Colors.black.withOpacity(0.35),
                                       borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: borderColor.withOpacity(0.6), width: 2),
                                     ),
                                     child: Column(
                                       children: [
@@ -360,53 +363,71 @@ class _AppScreenState extends State<AppScreen> {
                                           child: Center(
                                             child: FittedBox(
                                               fit: BoxFit.scaleDown,
-                                              child: Text(_patientName,
-                                                  textAlign: TextAlign.center,
-                                                  style: GoogleFonts.dmSans(fontSize: 110, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
+                                              child: Text(
+                                                _patientName,
+                                                textAlign: TextAlign.center,
+                                                style: GoogleFonts.dmSans(
+                                                  fontSize: 110,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: primaryText,
+                                                  letterSpacing: 2,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
                                         const SizedBox(height: 12),
+
+                                        // Active elements shown as chips using accent color
                                         Wrap(
                                           spacing: 10,
                                           runSpacing: 10,
                                           alignment: WrapAlignment.center,
                                           children: _activeElements.isNotEmpty
                                               ? _activeElements
-                                              .map((e) => Chip(
-                                            avatar: Icon(e.icon, size: 18, color: Colors.black),
-                                            label: Text(e.label, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                            backgroundColor: goldColor,
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                          ))
+                                              .map(
+                                                (e) => Chip(
+                                              avatar: Icon(e.icon, size: 18, color: Colors.black),
+                                              label: Text(e.label,
+                                                  style: GoogleFonts.dmSans(
+                                                      fontSize: 14, fontWeight: FontWeight.w700)),
+                                              backgroundColor: accentColor,
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                            ),
+                                          )
                                               .toList()
                                               : [
                                             Chip(
-                                              label: Text('No active items', style: GoogleFonts.dmSans(color: Colors.white70)),
+                                              label: Text('No active items',
+                                                  style: GoogleFonts.dmSans(color: Colors.black)),
                                               backgroundColor: Colors.white12,
                                             )
                                           ],
                                         ),
-                                        const SizedBox(height: 8),
                                       ],
                                     ),
                                   ),
                                 ),
+
                                 const SizedBox(height: 12),
 
+                                // Custom messages horizontal list
                                 SizedBox(
                                   height: 110,
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
-                                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                                        Text('Custom messages', style: GoogleFonts.dmSans(fontWeight: FontWeight.w700)),
-                                        Text('${_customMessages.length} total', style: const TextStyle(color: Colors.white54))
-                                      ]),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text('Custom messages', style: GoogleFonts.dmSans(fontWeight: FontWeight.w700, color: primaryText)),
+                                          Text('${_customMessages.length} total', style: TextStyle(color: settings.secondaryTextColor)),
+                                        ],
+                                      ),
                                       const SizedBox(height: 8),
                                       Expanded(
                                         child: _customMessages.isEmpty
-                                            ? Center(child: Text('No custom messages yet.', style: GoogleFonts.dmSans(color: Colors.white60)))
+                                            ? Center(child: Text('No custom messages.', style: TextStyle(color: settings.secondaryTextColor)))
                                             : ListView.separated(
                                           scrollDirection: Axis.horizontal,
                                           itemCount: _customMessages.length,
@@ -419,15 +440,16 @@ class _AppScreenState extends State<AppScreen> {
                                                 width: 220,
                                                 padding: const EdgeInsets.all(10),
                                                 decoration: BoxDecoration(
-                                                  color: custom.active ? goldColor : Colors.white10,
+                                                  color: custom.active ? accentColor : Colors.white10,
                                                   borderRadius: BorderRadius.circular(12),
+                                                  border: Border.all(color: borderColor, width: 2),
                                                 ),
                                                 child: Row(
                                                   children: [
-                                                    Icon(custom.icon, color: custom.active ? Colors.black : Colors.white),
+                                                    Icon(custom.icon, color: custom.active ? Colors.black : primaryText),
                                                     const SizedBox(width: 8),
-                                                    Expanded(child: Text(custom.label, style: const TextStyle(fontWeight: FontWeight.w700))),
-                                                    IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _removeCustomMessage(custom)),
+                                                    Expanded(child: Text(custom.label, style: GoogleFonts.dmSans(fontWeight: FontWeight.w700, color: custom.active ? Colors.black : primaryText))),
+                                                    IconButton(icon: Icon(Icons.delete_outline, color: primaryText), onPressed: () => _removeCustomMessage(custom)),
                                                   ],
                                                 ),
                                               ),
