@@ -1,4 +1,4 @@
-package com.clinicircle.informer
+package com.clinicircle.icuspeak
 
 import io.flutter.embedding.android.FlutterActivity
 
